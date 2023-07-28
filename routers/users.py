@@ -51,6 +51,7 @@ async def get_user(user: user_dependecy, db: db_dependency):
 async def change_password(user: user_dependecy, db: db_dependency, user_verif: UserVerif):
     if user is None:
         raise HTTPException(status_code=401, detail='Unauthorized')
+
     user = db.query(Users).filter(Users.id == user.get('id')).first()
     if not bcrypt_context.verify(user_verif.password, user.hashed_password):
         raise HTTPException(status_code=401, detail='Unauthorized')
