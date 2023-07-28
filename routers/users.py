@@ -58,5 +58,3 @@ async def change_password(user: user_dependecy, db: db_dependency, user_verif: U
     user.hashed_password = bcrypt_context.hash(user_verif.new_password)
     db.add(user)
     db.commit()
-
-
