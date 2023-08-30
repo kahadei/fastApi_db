@@ -13,14 +13,12 @@ from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
 
-
 router = APIRouter(
     prefix='/auth',
     tags=['auth']
 )
 bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
-
 
 SECRET_KEY = 'HmLdpkRlMKtQIJg6sjvazXDo78q4ASEf'
 ALGORITHM = 'HS256'
@@ -34,6 +32,7 @@ class CreateUserRequest(BaseModel):
     second_name: str = Field()
     password: str = Field()
     is_active: bool = Field()
+    phone_num: str = Field()
     role: str = Field()
 
 
@@ -92,6 +91,7 @@ async def create_user(db: db_dependency,
         second_name=user_data.second_name,
         role=user_data.role,
         hashed_password=bcrypt_context.hash(user_data.password),
+        phone_num=user_data.phone_num,
         is_active=True,
     )
 
@@ -107,4 +107,3 @@ async def login_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]
         return 'Failed'
     token = create_token(user.username, user.id, user.role, timedelta(minutes=20))
     return {'access_token': token, 'token_type': 'bearer'}
-
