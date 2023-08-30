@@ -1,23 +1,27 @@
-from datetime import timedelta, datetime
-from typing import Annotated
+import sys
 
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Path
-from fastapi.security import OAuth2PasswordBearer
-from passlib.context import CryptContext
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+sys.path.append('..')
+
 from starlette import status
-
+from starlette.responses import RedirectResponse
+from fastapi import Depends, APIRouter, Request, Form
 import models
-from database import SessionLocal
-from models import Users, ToDo
-from .auth import get_current_user
+from database import engine, SessionLocal
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from .auth import get_current_user, get_password_hash, verify_password
 
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 
 router = APIRouter(
-    prefix='/user',
-    tags=['user']
+    prefix='/users',
+    tags=['users'],
+    responses={404: {"description": "Not found"}}
 )
+
+models.Base.metadata.create_all(bind=engine)
+templates = Jinja2Templates(directory="templates")
 
 
 def get_db():
@@ -28,33 +32,38 @@ def get_db():
         db.close()
 
 
-db_dependency = Annotated[Session, Depends(get_db)]
-user_dependecy = Annotated[dict, Depends(get_current_user)]
-
-
-bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
-oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
-
-class UserVerif(BaseModel):
+class UserVerification(BaseModel):
+    username: str
     password: str
-    new_password: str = Field(min_length=6)
+    new_password: str
 
 
-@router.get('/', status_code=status.HTTP_200_OK)
-async def get_user(user: user_dependecy, db: db_dependency):
-    if user is None or user.get('role') != 'admin':
-        raise HTTPException(status_code=401, detail='Unauthorized')
-    return db.query(Users).filter(Users.id == user.get('id')).first()
-
-
-@router.put('/passsword', status_code=status.HTTP_204_NO_CONTENT)
-async def change_password(user: user_dependecy, db: db_dependency, user_verif: UserVerif):
+@router.get("/edit-password", response_class=HTMLResponse)
+async def edit_user_view(request: Request):
+    user = await get_current_user(request)
     if user is None:
-        raise HTTPException(status_code=401, detail='Unauthorized')
+        return RedirectResponse(url="/auth", status_code=status.HTTP_302_FOUND)
 
-    user = db.query(Users).filter(Users.id == user.get('id')).first()
-    if not bcrypt_context.verify(user_verif.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail='Unauthorized')
-    user.hashed_password = bcrypt_context.hash(user_verif.new_password)
-    db.add(user)
-    db.commit()
+    return templates.TemplateResponse("edit-password.html", {"request": request, "user": user})
+
+
+@router.post("/edit-password", response_class=HTMLResponse)
+async def user_password_change(request: Request,
+                               username: str = Form(...),
+                               password_old: str = Form(...),
+                               password_new: str = Form(...),
+                               db: Session = Depends(get_db)
+                               ):
+    user = await get_current_user(request)
+    if user is None:
+        return RedirectResponse(url="/auth", status_code=status.HTTP_302_FOUND)
+    msg = 'Invalid username or password'
+    user_data = db.query(models.Users).filter(models.Users.username == username).first()
+    if user_data is not None:
+        if username == user_data.username and verify_password(password_old, user_data.hashed_password):
+            user_data.hashed_password = get_password_hash(password_new)
+            db.add(user_data)
+            db.commit()
+            msg = 'Password updated'
+
+    return templates.TemplateResponse("edit-password.html", {"request": request, "user": user, "msg": msg})
